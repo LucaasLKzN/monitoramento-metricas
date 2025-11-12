@@ -18,6 +18,8 @@ ENV/
 # Arquivos temporários
 temp_upload.csv
 *.log
+convert.py
+config.toml
 
 # IDE
 .vscode/

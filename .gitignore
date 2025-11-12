@@ -1,0 +1,30 @@
+# Arquivos de usuários (NUNCA commitar!)
+users.json
+
+# Banco de dados
+dados.db
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Arquivos temporários
+temp_upload.csv
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

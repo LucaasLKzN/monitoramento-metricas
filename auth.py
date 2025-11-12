@@ -30,6 +30,15 @@ class Auth:
     
     def init_users(self):
         """Inicializa usuários padrão se não existirem"""
+        # Tentar carregar do Streamlit Secrets primeiro (para produção)
+        try:
+            if hasattr(st, 'secrets') and 'users' in st.secrets:
+                # Usar usuários do Streamlit Secrets
+                return
+        except Exception:
+            pass
+        
+        # Se não tiver secrets, usar arquivo local
         try:
             with open(self.users_file, 'r') as f:
                 users = json.load(f)
@@ -84,20 +93,27 @@ class Auth:
     def login(self, username: str, password: str) -> bool:
         """Realiza o login do usuário"""
         if self.verify_credentials(username, password):
-            st.session_state['authenticated'] = True
-            st.session_state['username'] = username
+            # Criar session_id único
+            session_id = hashlib.sha256(f"{username}{time.time()}".encode()).hexdigest()
+            
+            st.session_state.authenticated = True
+            st.session_state.username = username
+            st.session_state.session_id = session_id
+            
             user_info = self.get_user_info(username)
-            st.session_state['user_nome'] = user_info['nome'] if user_info else username
-            st.session_state['login_time'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.session_state.user_nome = user_info['nome'] if user_info else username
+            st.session_state.login_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
             return True
         return False
     
     def logout(self):
         """Realiza o logout do usuário"""
-        st.session_state['authenticated'] = False
-        st.session_state['username'] = None
-        st.session_state['user_nome'] = None
-        st.session_state['login_time'] = None
+        st.session_state.authenticated = False
+        st.session_state.username = None
+        st.session_state.user_nome = None
+        st.session_state.login_time = None
+        st.session_state.session_id = None
     
     def is_authenticated(self) -> bool:
         """Verifica se o usuário está autenticado"""
@@ -132,7 +148,7 @@ class Auth:
         """, unsafe_allow_html=True)
         
         # Container centralizado
-        col1, col2, col3 = st.columns([1, 0.6, 1])
+        col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
             st.markdown('<div class="login-container">', unsafe_allow_html=True)

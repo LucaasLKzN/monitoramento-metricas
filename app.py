@@ -1,466 +1,230 @@
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import hashlib
+import json
 from datetime import datetime, timedelta
-from database import Database
-from auth import Auth
+import time
 
-# Configuração da página
-st.set_page_config(
-    page_title="Sistema de Monitoramento",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Inicializar session_state se não existir
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'username' not in st.session_state:
-    st.session_state.username = None
-if 'user_nome' not in st.session_state:
-    st.session_state.user_nome = None
-if 'login_time' not in st.session_state:
-    st.session_state.login_time = None
-
-# Inicializar autenticação
-auth = Auth()
-
-# Verificar autenticação - SE NÃO ESTIVER LOGADO, MOSTRA LOGIN E PARA
-if not auth.is_authenticated():
-    auth.show_login_page()
-    st.stop()
-
-# SE CHEGOU AQUI, ESTÁ AUTENTICADO! Continua o app normal...
-
-# Inicializar banco de dados (sem cache para sempre pegar dados atualizados)
-def init_database():
-    return Database()
-
-db = init_database()
-
-# Título principal
-st.title("📊 Sistema de Monitoramento de Métricas")
-st.markdown("---")
-
-# Sidebar - Menu lateral
-with st.sidebar:
-    st.header("⚙️ Configurações")
+class Auth:
+    def __init__(self, users_file: str = "users.json"):
+        """Inicializa o sistema de autenticação"""
+        self.users_file = users_file
+        self.init_users()
+        self.init_session()
     
-    # Mostrar info do usuário
-    auth.show_user_info_sidebar()
+    def init_session(self):
+        """Inicializa as variáveis de sessão"""
+        if 'authenticated' not in st.session_state:
+            st.session_state.authenticated = False
+        if 'username' not in st.session_state:
+            st.session_state.username = None
+        if 'user_nome' not in st.session_state:
+            st.session_state.user_nome = None
+        if 'login_time' not in st.session_state:
+            st.session_state.login_time = None
+        if 'session_id' not in st.session_state:
+            st.session_state.session_id = None
     
-    st.markdown("---")
+    def hash_password(self, password: str) -> str:
+        """Criptografa a senha usando SHA-256"""
+        return hashlib.sha256(password.encode()).hexdigest()
     
-    menu = st.radio(
-        "Navegação",
-        ["📈 Dashboard", "📥 Importar Dados", "📋 Dados Completos", "🔧 Configurações", "🔑 Alterar Senha"]
-    )
-    
-    st.markdown("---")
-    
-    # Filtros de data
-    st.subheader("🗓️ Filtro de Período")
-    
-    # Obter intervalo de datas disponíveis
-    resumo_geral = db.get_resumo_geral()
-    
-    if resumo_geral['total_registros'] > 0:
-        dados = db.get_dados_completos()
-        data_min = pd.to_datetime(dados['data'], format='%Y-%m-%d').min().date()
-        data_max = pd.to_datetime(dados['data'], format='%Y-%m-%d').max().date()
-        
-        # Calcular data inicial (7 dias atrás por padrão, mas não antes da data mínima)
-        data_inicial_sugerida = data_max - timedelta(days=7)
-        if data_inicial_sugerida < data_min:
-            data_inicial_sugerida = data_min
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            data_inicio = st.date_input(
-                "Data Início",
-                value=data_inicial_sugerida,
-                min_value=data_min,
-                max_value=data_max,
-                key="data_inicio_filter"
-            )
-        with col2:
-            data_fim = st.date_input(
-                "Data Fim",
-                value=data_max,
-                min_value=data_min,
-                max_value=data_max,
-                key="data_fim_filter"
-            )
-    else:
-        st.info("Importe dados para usar os filtros")
-        data_inicio = datetime.now().date()
-        data_fim = datetime.now().date()
-
-# =======================
-# PÁGINA: DASHBOARD
-# =======================
-if menu == "📈 Dashboard":
-    if resumo_geral['total_registros'] == 0:
-        st.warning("⚠️ Nenhum dado encontrado. Importe dados pela aba 'Importar Dados'")
-        st.stop()
-    
-    # Obter resumo do período selecionado
-    resumo_periodo = db.get_resumo_geral(str(data_inicio), str(data_fim))
-    
-    st.header(f"📊 Dashboard - Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
-    
-    # Cards com métricas principais
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric(
-            "Total de Registros",
-            f"{resumo_periodo['total_registros']:,}".replace(',', '.')
-        )
-    
-    with col2:
-        st.metric(
-            "Total Liberado",
-            f"R$ {resumo_periodo['total_liberado']:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-        )
-    
-    with col3:
-        st.metric(
-            "Média por Registro",
-            f"R$ {resumo_periodo['media_liberado']:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-        )
-    
-    with col4:
-        st.metric(
-            "Promotoras Ativas",
-            resumo_periodo['total_promotoras']
-        )
-    
-    st.markdown("---")
-    
-    # Gráficos
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📈 Evolução Temporal")
-        df_periodo = db.get_totais_por_periodo(str(data_inicio), str(data_fim))
-        
-        if not df_periodo.empty:
-            df_periodo['data'] = pd.to_datetime(df_periodo['data'])
-            
-            fig = px.line(
-                df_periodo,
-                x='data',
-                y='total_liberado',
-                title='Total Liberado por Dia',
-                labels={'data': 'Data', 'total_liberado': 'Valor Liberado (R$)'}
-            )
-            fig.update_traces(line_color='#1f77b4', line_width=3)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Sem dados para o período selecionado")
-    
-    with col2:
-        st.subheader("👥 Top Promotoras")
-        df_promotoras = db.get_totais_por_promotora(str(data_inicio), str(data_fim))
-        
-        if not df_promotoras.empty:
-            # Pegar top 10
-            df_top = df_promotoras.head(10)
-            
-            fig = px.bar(
-                df_top,
-                x='total_liberado',
-                y='promotora',
-                orientation='h',
-                title='Top 10 Promotoras por Valor Total',
-                labels={'total_liberado': 'Valor Total (R$)', 'promotora': 'Promotora'}
-            )
-            fig.update_traces(marker_color='#2ca02c')
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Sem dados para o período selecionado")
-    
-    st.markdown("---")
-    
-    # Tabelas detalhadas
-    tab1, tab2 = st.tabs(["📊 Por Promotora", "📅 Por Período"])
-    
-    with tab1:
-        st.subheader("Resumo por Promotora")
-        df_promotoras = db.get_totais_por_promotora(str(data_inicio), str(data_fim))
-        
-        if not df_promotoras.empty:
-            # Formatar valores
-            df_display = df_promotoras.copy()
-            df_display['total_liberado'] = df_display['total_liberado'].apply(
-                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-            )
-            df_display['media_liberado'] = df_display['media_liberado'].apply(
-                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-            )
-            df_display.columns = ['Promotora', 'Quantidade', 'Total Liberado', 'Média']
-            
-            st.dataframe(df_display, use_container_width=True, height=400)
-            
-            # Botão de download
-            csv = df_promotoras.to_csv(index=False)
-            st.download_button(
-                label="⬇️ Baixar Relatório (CSV)",
-                data=csv,
-                file_name=f"relatorio_promotoras_{data_inicio}_{data_fim}.csv",
-                mime="text/csv"
-            )
-        else:
-            st.info("Sem dados para o período selecionado")
-    
-    with tab2:
-        st.subheader("Resumo por Data")
-        df_periodo = db.get_totais_por_periodo(str(data_inicio), str(data_fim))
-        
-        if not df_periodo.empty:
-            # Formatar valores
-            df_display = df_periodo.copy()
-            df_display['data'] = pd.to_datetime(df_display['data']).dt.strftime('%d/%m/%Y')
-            df_display['total_liberado'] = df_display['total_liberado'].apply(
-                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-            )
-            df_display.columns = ['Data', 'Quantidade', 'Total Liberado']
-            
-            st.dataframe(df_display, use_container_width=True, height=400)
-            
-            # Botão de download
-            csv = df_periodo.to_csv(index=False)
-            st.download_button(
-                label="⬇️ Baixar Relatório (CSV)",
-                data=csv,
-                file_name=f"relatorio_periodo_{data_inicio}_{data_fim}.csv",
-                mime="text/csv"
-            )
-        else:
-            st.info("Sem dados para o período selecionado")
-
-# =======================
-# PÁGINA: IMPORTAR DADOS
-# =======================
-elif menu == "📥 Importar Dados":
-    st.header("📥 Importar Dados do Google Sheets")
-    
-    st.info("""
-    ### 📝 Como importar:
-    1. Abra seu Google Sheets
-    2. Clique em **Arquivo > Fazer download > Valores separados por vírgula (.csv)**
-    3. Faça upload do arquivo abaixo
-    4. Certifique-se que o CSV contém as colunas: **DATA, PROMOTORA, VALOR LIBERADO, ID**
-    """)
-    
-    uploaded_file = st.file_uploader(
-        "Escolha o arquivo CSV exportado do Google Sheets",
-        type=['csv']
-    )
-    
-    if uploaded_file is not None:
-        # Preview dos dados
+    def init_users(self):
+        """Inicializa usuários padrão se não existirem"""
+        # Tentar carregar do Streamlit Secrets primeiro (para produção)
         try:
-            df_preview = pd.read_csv(uploaded_file)
+            if hasattr(st, 'secrets') and 'users' in st.secrets:
+                # Usar usuários do Streamlit Secrets
+                return
+        except Exception:
+            pass
+        
+        # Se não tiver secrets, usar arquivo local
+        try:
+            with open(self.users_file, 'r') as f:
+                users = json.load(f)
+        except FileNotFoundError:
+            # Criar usuários padrão
+            users = {
+                "admin": {
+                    "password": self.hash_password("admin123"),
+                    "nome": "Administrador",
+                    "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                },
+                "usuario": {
+                    "password": self.hash_password("user123"),
+                    "nome": "Usuário Padrão",
+                    "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+            }
+            with open(self.users_file, 'w') as f:
+                json.dump(users, f, indent=4)
+    
+    def verify_credentials(self, username: str, password: str) -> bool:
+        """Verifica se as credenciais estão corretas"""
+        try:
+            with open(self.users_file, 'r') as f:
+                users = json.load(f)
             
-            st.subheader("👁️ Preview dos Dados")
-            st.dataframe(df_preview.head(10), use_container_width=True)
+            if username in users:
+                hashed_password = self.hash_password(password)
+                return users[username]["password"] == hashed_password
+            return False
+        except Exception as e:
+            print(f"Erro ao verificar credenciais: {e}")
+            return False
+    
+    def get_user_info(self, username: str) -> dict:
+        """Retorna informações do usuário"""
+        try:
+            with open(self.users_file, 'r') as f:
+                users = json.load(f)
             
-            st.info(f"📊 Total de linhas no arquivo: {len(df_preview):,}".replace(',', '.'))
+            if username in users:
+                return {
+                    "username": username,
+                    "nome": users[username].get("nome", username),
+                    "criado_em": users[username].get("criado_em", "N/A")
+                }
+            return None
+        except Exception as e:
+            print(f"Erro ao obter info do usuário: {e}")
+            return None
+    
+    def login(self, username: str, password: str) -> bool:
+        """Realiza o login do usuário"""
+        if self.verify_credentials(username, password):
+            # Criar session_id único
+            session_id = hashlib.sha256(f"{username}{time.time()}".encode()).hexdigest()
             
-            # Resetar ponteiro do arquivo
-            uploaded_file.seek(0)
+            st.session_state.authenticated = True
+            st.session_state.username = username
+            st.session_state.session_id = session_id
             
-            col1, col2, col3 = st.columns([1, 1, 2])
+            user_info = self.get_user_info(username)
+            st.session_state.user_nome = user_info['nome'] if user_info else username
+            st.session_state.login_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            with col1:
-                if st.button("✅ Confirmar Importação", type="primary"):
-                    with st.spinner("Importando dados..."):
-                        # Salvar temporariamente
-                        temp_path = "temp_upload.csv"
-                        with open(temp_path, "wb") as f:
-                            f.write(uploaded_file.getvalue())
-                        
-                        # Importar para o banco
-                        resultado = db.import_from_csv(temp_path)
-                        
-                        if resultado['sucesso']:
-                            st.success(f"""
-                            ✅ **Importação concluída com sucesso!**
-                            
-                            - Registros importados: {resultado['registros_importados']:,}
-                            - Total no banco: {resultado['total_no_banco']:,}
-                            """.replace(',', '.'))
-                            st.balloons()
-                            # Limpar cache e forçar recarga
-                            st.cache_resource.clear()
+            return True
+        return False
+    
+    def logout(self):
+        """Realiza o logout do usuário"""
+        st.session_state.authenticated = False
+        st.session_state.username = None
+        st.session_state.user_nome = None
+        st.session_state.login_time = None
+        st.session_state.session_id = None
+    
+    def is_authenticated(self) -> bool:
+        """Verifica se o usuário está autenticado"""
+        return st.session_state.get('authenticated', False)
+    
+    def require_auth(self):
+        """Decorator/função que requer autenticação"""
+        if not self.is_authenticated():
+            self.show_login_page()
+            st.stop()
+    
+    def show_login_page(self):
+        """Exibe a página de login"""
+        st.markdown("""
+            <style>
+            .login-container {
+                max-width: 400px;
+                margin: 100px auto;
+                padding: 2rem;
+                border-radius: 10px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            }
+            .login-title {
+                color: white;
+                text-align: center;
+                font-size: 2rem;
+                margin-bottom: 2rem;
+                font-weight: bold;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        # Container centralizado
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col2:
+            st.markdown('<div class="login-container">', unsafe_allow_html=True)
+            st.markdown('<div class="login-title">🔐 Login</div>', unsafe_allow_html=True)
+            
+            with st.form("login_form"):
+                username = st.text_input("👤 Usuário", key="login_username")
+                password = st.text_input("🔑 Senha", type="password", key="login_password")
+                
+                col_btn1, col_btn2 = st.columns(2)
+                
+                with col_btn1:
+                    submit = st.form_submit_button("🚀 Entrar", use_container_width=True)
+                
+                with col_btn2:
+                    show_info = st.form_submit_button("ℹ️ Info", use_container_width=True)
+                
+                if submit:
+                    if username and password:
+                        if self.login(username, password):
+                            st.success("✅ Login realizado com sucesso!")
                             st.rerun()
                         else:
-                            st.error(f"❌ Erro na importação: {resultado['erro']}")
+                            st.error("❌ Usuário ou senha incorretos!")
+                    else:
+                        st.warning("⚠️ Preencha todos os campos!")
+                
+                if show_info:
+                    st.info("""
+                    **👥 Usuários Padrão:**
+                    
+                    **Admin:**
+                    - Usuário: `admin`
+                    - Senha: `admin123`
+                    
+                    **Usuário:**
+                    - Usuário: `usuario`
+                    - Senha: `user123`
+                    
+                    💡 *Altere as senhas após o primeiro acesso!*
+                    """)
             
-            with col2:
-                if st.button("🔄 Resetar Banco"):
-                    if st.checkbox("⚠️ Confirmo que quero APAGAR todos os dados"):
-                        db.limpar_banco()
-                        st.success("✅ Banco limpo com sucesso!")
-                        st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    def show_user_info_sidebar(self):
+        """Mostra informações do usuário na sidebar"""
+        if self.is_authenticated():
+            with st.sidebar:
+                st.markdown("---")
+                st.markdown(f"👤 **Usuário:** {st.session_state.get('user_nome', 'N/A')}")
+                st.markdown(f"🕒 **Login:** {st.session_state.get('login_time', 'N/A')}")
+                
+                if st.button("🚪 Sair", use_container_width=True):
+                    self.logout()
+                    st.rerun()
+    
+    def change_password(self, username: str, old_password: str, new_password: str) -> tuple:
+        """Altera a senha do usuário"""
+        try:
+            # Verificar senha antiga
+            if not self.verify_credentials(username, old_password):
+                return False, "Senha atual incorreta!"
+            
+            # Carregar usuários
+            with open(self.users_file, 'r') as f:
+                users = json.load(f)
+            
+            # Atualizar senha
+            users[username]["password"] = self.hash_password(new_password)
+            users[username]["senha_alterada_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Salvar
+            with open(self.users_file, 'w') as f:
+                json.dump(users, f, indent=4)
+            
+            return True, "Senha alterada com sucesso!"
         
         except Exception as e:
-            st.error(f"❌ Erro ao ler arquivo: {str(e)}")
-    
-    # Mostrar estatísticas do banco atual
-    st.markdown("---")
-    st.subheader("📊 Estatísticas do Banco Atual")
-    
-    resumo = db.get_resumo_geral()
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total de Registros", f"{resumo['total_registros']:,}".replace(',', '.'))
-    
-    with col2:
-        st.metric(
-            "Total Liberado",
-            f"R$ {resumo['total_liberado']:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-        )
-    
-    with col3:
-        st.metric("Promotoras Cadastradas", resumo['total_promotoras'])
-
-# =======================
-# PÁGINA: DADOS COMPLETOS
-# =======================
-elif menu == "📋 Dados Completos":
-    st.header("📋 Visualização de Dados Completos")
-    
-    if resumo_geral['total_registros'] == 0:
-        st.warning("⚠️ Nenhum dado encontrado.")
-        st.stop()
-    
-    df_completo = db.get_dados_completos(str(data_inicio), str(data_fim))
-    
-    st.info(f"📊 Mostrando {len(df_completo):,} registros do período selecionado".replace(',', '.'))
-    
-    # Formatar para exibição
-    df_display = df_completo.copy()
-    df_display['data'] = pd.to_datetime(df_display['data']).dt.strftime('%d/%m/%Y')
-    df_display['valor_liberado'] = df_display['valor_liberado'].apply(
-        lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    )
-    df_display.columns = ['Data', 'Promotora', 'Valor Liberado', 'ID']
-    
-    st.dataframe(df_display, use_container_width=True, height=600)
-    
-    # Download
-    csv = df_completo.to_csv(index=False)
-    st.download_button(
-        label="⬇️ Baixar Dados Completos (CSV)",
-        data=csv,
-        file_name=f"dados_completos_{data_inicio}_{data_fim}.csv",
-        mime="text/csv"
-    )
-
-# =======================
-# PÁGINA: CONFIGURAÇÕES
-# =======================
-elif menu == "🔧 Configurações":
-    st.header("🔧 Configurações do Sistema")
-    
-    st.subheader("📊 Informações do Banco")
-    resumo = db.get_resumo_geral()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.info(f"""
-        **Estatísticas Gerais:**
-        - Total de Registros: {resumo['total_registros']:,}
-        - Total Liberado: R$ {resumo['total_liberado']:,.2f}
-        - Promotoras: {resumo['total_promotoras']}
-        """.replace(',', '.').replace('.', ',', 2))
-    
-    with col2:
-        st.info(f"""
-        **Valores:**
-        - Mínimo: R$ {resumo['min_liberado']:,.2f}
-        - Máximo: R$ {resumo['max_liberado']:,.2f}
-        - Média: R$ {resumo['media_liberado']:,.2f}
-        """.replace(',', 'X').replace('.', ',').replace('X', '.'))
-    
-    st.markdown("---")
-    
-    st.subheader("⚠️ Zona de Perigo")
-    st.warning("As ações abaixo são irreversíveis. Use com cuidado!")
-    
-    # Criar um estado para controlar a confirmação
-    if 'confirmar_limpar' not in st.session_state:
-        st.session_state.confirmar_limpar = False
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🗑️ Limpar Todos os Dados", type="secondary"):
-            st.session_state.confirmar_limpar = True
-    
-    if st.session_state.confirmar_limpar:
-        st.error("⚠️ ATENÇÃO: Esta ação irá apagar TODOS os dados permanentemente!")
-        
-        col_confirm, col_cancel = st.columns(2)
-        
-        with col_confirm:
-            if st.button("✅ SIM, APAGAR TUDO", type="primary"):
-                if db.limpar_banco():
-                    st.success("✅ Banco limpo com sucesso!")
-                    st.session_state.confirmar_limpar = False
-                    st.rerun()
-                else:
-                    st.error("❌ Erro ao limpar banco")
-        
-        with col_cancel:
-            if st.button("❌ Cancelar"):
-                st.session_state.confirmar_limpar = False
-                st.rerun()
-
-# =======================
-# PÁGINA: ALTERAR SENHA
-# =======================
-elif menu == "🔑 Alterar Senha":
-    st.header("🔑 Alterar Senha")
-    
-    st.info("Por segurança, altere sua senha padrão!")
-    
-    with st.form("change_password_form"):
-        senha_atual = st.text_input("🔒 Senha Atual", type="password")
-        senha_nova = st.text_input("🔑 Nova Senha", type="password")
-        senha_confirma = st.text_input("✅ Confirmar Nova Senha", type="password")
-        
-        submit = st.form_submit_button("💾 Alterar Senha", type="primary")
-        
-        if submit:
-            if not senha_atual or not senha_nova or not senha_confirma:
-                st.error("❌ Preencha todos os campos!")
-            elif senha_nova != senha_confirma:
-                st.error("❌ As senhas não coincidem!")
-            elif len(senha_nova) < 6:
-                st.error("❌ A senha deve ter no mínimo 6 caracteres!")
-            else:
-                username = st.session_state.get('username')
-                sucesso, mensagem = auth.change_password(username, senha_atual, senha_nova)
-                
-                if sucesso:
-                    st.success(f"✅ {mensagem}")
-                    st.balloons()
-                else:
-                    st.error(f"❌ {mensagem}")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: gray;'>
-    <small>Sistema de Monitoramento de Métricas v1.0 | Desenvolvido para otimização de análise de dados</small>
-</div>
-""", unsafe_allow_html=True)
+            return False, f"Erro ao alterar senha: {str(e)}"

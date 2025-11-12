@@ -41,7 +41,7 @@ def init_database():
 db = init_database()
 
 # Título principal
-st.title("📊 Sistema de Monitoramento de Métricas")
+st.title("📊 Sistema de Monitoramento")
 st.markdown("---")
 
 # Sidebar - Menu lateral

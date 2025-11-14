@@ -98,6 +98,7 @@ with st.sidebar:
         data_inicio = datetime.now().date()
         data_fim = datetime.now().date()
 
+
 # =======================
 # PÁGINA: DASHBOARD
 # =======================
@@ -112,7 +113,7 @@ if menu == "📈 Dashboard":
     st.header(f"📊 Dashboard - Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
     
     # Cards com métricas principais
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         st.metric(
@@ -136,6 +137,12 @@ if menu == "📈 Dashboard":
         st.metric(
             "Promotoras Ativas",
             resumo_periodo['total_promotoras']
+        )
+
+    with col5:
+        st.metric(
+            "Produtos",
+            resumo_periodo['total_produtos']
         )
     
     st.markdown("---")
@@ -184,9 +191,41 @@ if menu == "📈 Dashboard":
             st.info("Sem dados para o período selecionado")
     
     st.markdown("---")
+
+    # Gráfico de Produtos
+    st.subheader("📦 Análise por Produto")
+    df_produtos = db.get_totais_por_produto(str(data_inicio), str(data_fim))
+
+    if not df_produtos.empty:
+        col_grafico, col_tabela = st.columns([2,1])
+
+        with col_grafico:
+            fig = px.pie(
+                df_produtos,
+                values='total_liberado',
+                names='produto',
+                title='Distribuição por Produto',
+                hole=0.4
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col_tabela:
+            df_display = df_produtos.copy()
+            df_display['total_liberado'] = df_display['total_liberado'].apply(
+                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            )
+            df_display['media_liberado'] = df_display['media_liberado'].apply(
+                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            )
+            df_display.columns = ['Produto', 'Qtd', 'Total', 'Média']
+            st.dataframe(df_display, use_container_width=True, height=300)
+    else:
+        st.info("Sem dados de produtos para o período")
+    
+    st.markdown("---")
     
     # Tabelas detalhadas
-    tab1, tab2 = st.tabs(["📊 Por Promotora", "📅 Por Período"])
+    tab1, tab2, tab3 = st.tabs(["📊 Por Promotora", "📅 Por Período", "📦 Por Produto"])
     
     with tab1:
         st.subheader("Resumo por Promotora")
@@ -237,6 +276,35 @@ if menu == "📈 Dashboard":
                 label="⬇️ Baixar Relatório (CSV)",
                 data=csv,
                 file_name=f"relatorio_periodo_{data_inicio}_{data_fim}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("Sem dados para o período selecionado")
+
+    
+    with tab3:
+        st.subheader("Resumo Por Produto")
+        df_produtos = db.get_totais_por_produto(str(data_inicio), str(data_fim))
+
+        if not df_produtos.empty:
+            # Formatar valores
+            df_display = df_produtos.copy()
+            df_display['total_liberado'] = df_display['total_liberado'].apply(
+                lambda x: f"RS {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            )
+            df_display['media_liberado'] = df_display['media_liberado'].apply(
+                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            )
+            df_display.columns = ['Produtos', 'Quantidade','Total Liberado', 'Média']
+
+            st.dataframe(df_display, use_container_width=True, height=400)
+
+            # Botão de download
+            csv = df_produtos.to_csv(index=False)
+            st.download_button(
+                label = "⬇️ Baixar Relatório (CSV)",
+                data=csv,
+                file_name=f"relatorio_produtos_{data_inicio}_{data_fim}.csv",
                 mime="text/csv"
             )
         else:
@@ -330,6 +398,7 @@ elif menu == "📥 Importar Dados":
     
     with col3:
         st.metric("Promotoras Cadastradas", resumo['total_promotoras'])
+        st.metric("Produtos Cadastrados", resumo['total_produtos'])
 
 # =======================
 # PÁGINA: DADOS COMPLETOS
@@ -351,7 +420,8 @@ elif menu == "📋 Dados Completos":
     df_display['valor_liberado'] = df_display['valor_liberado'].apply(
         lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     )
-    df_display.columns = ['Data', 'Promotora', 'Valor Liberado', 'ID']
+    df_display['produto'] = df_display['produto'].fillna('Não informado')
+    df_display.columns = ['Data', 'Promotora', 'Produtos', 'Valor Liberado', 'ID']
     
     st.dataframe(df_display, use_container_width=True, height=600)
     
@@ -381,6 +451,7 @@ elif menu == "🔧 Configurações":
         - Total de Registros: {resumo['total_registros']:,}
         - Total Liberado: R$ {resumo['total_liberado']:,.2f}
         - Promotoras: {resumo['total_promotoras']}
+        - Produtos: {resumo['total_produtos']}
         """.replace(',', '.').replace('.', ',', 2))
     
     with col2:
@@ -453,7 +524,6 @@ elif menu == "🔑 Alterar Senha":
                 
                 if sucesso:
                     st.success(f"✅ {mensagem}")
-                    st.balloons()
                 else:
                     st.error(f"❌ {mensagem}")
 
@@ -461,6 +531,6 @@ elif menu == "🔑 Alterar Senha":
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: gray;'>
-    <small>Sistema de Monitoramento de Métricas v1.0 | Desenvolvido para otimização de análise de dados</small>
+    <small>Sistema de Monitoramento de Métricas 2025 | Desenvolvido por AzDev</small>
 </div>
 """, unsafe_allow_html=True)

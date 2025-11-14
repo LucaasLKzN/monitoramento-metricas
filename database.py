@@ -23,18 +23,29 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 data DATE NOT NULL,
                 promotora TEXT NOT NULL,
+                produto TEXT,
                 valor_liberado REAL NOT NULL,
                 id_externo TEXT,
                 data_importacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
+        # Verificar se a coluna produto existe
+        cursor.execute("PRAGMA table_info(metricas)")
+        columns = [column[1] for column in cursor.fetchall()]
+
+        if 'produto' not in columns:
+            cursor.execute("ALTER TABLE metricas ADD COLUMN produto TEXT")
+
         # Criar índices para melhorar performance
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_data ON metricas(data)
         """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_promotora ON metricas(promotora)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_promotora ON metricas(produto)
         """)
         
         conn.commit()
@@ -53,7 +64,7 @@ class Database:
             df.columns = df.columns.str.strip().str.upper()
             
             # Validar colunas necessárias
-            required_cols = ['DATA', 'PROMOTORA', 'VALOR LIBERADO']
+            required_cols = ['DATA', 'PROMOTORA', 'PRODUTO','VALOR LIBERADO']
             missing_cols = [col for col in required_cols if col not in df.columns]
             
             if missing_cols:
@@ -86,8 +97,8 @@ class Database:
                 df['ID_EXTERNO'] = None
             
             # Renomear colunas para minúsculas (padrão do banco)
-            df_insert = df[['DATA', 'PROMOTORA', 'VALOR LIBERADO', 'ID_EXTERNO']].copy()
-            df_insert.columns = ['data', 'promotora', 'valor_liberado', 'id_externo']
+            df_insert = df[['DATA', 'PROMOTORA', 'PRODUTO', 'VALOR LIBERADO', 'ID_EXTERNO']].copy()
+            df_insert.columns = ['data', 'promotora', 'produto','valor_liberado', 'id_externo']
             
             # Inserir no banco
             conn = self.get_connection()
@@ -165,6 +176,27 @@ class Database:
         
         return df
     
+    def get_totais_por_produto(self, data_inicio: str, data_fim: str) -> pd.DataFrame:
+        """Retorna totais agrupados por produto"""
+        conn = self.get_connection()
+
+        query = """
+            SELECT
+                COALESCE(produto, 'Não informado') as produto,
+                COUNT(*) as quantidade,
+                SUM(valor_liberado) as total_liberado,
+                AVG(valor_liberado) as media_liberado
+            FROM metricas
+            WHERE data BETWEEN ? AND ?
+            GROUP BY produto
+            ORDER BY total_liberado DESC
+        """
+
+        df = pd.read_sql_query(query, conn, params=(data_inicio, data_fim))
+        conn.close()
+
+        return df
+    
     def get_resumo_geral(self, data_inicio: Optional[str] = None, 
                         data_fim: Optional[str] = None) -> Dict:
         """Retorna resumo geral das métricas"""
@@ -179,7 +211,8 @@ class Database:
                     AVG(valor_liberado) as media_liberado,
                     MIN(valor_liberado) as min_liberado,
                     MAX(valor_liberado) as max_liberado,
-                    COUNT(DISTINCT promotora) as total_promotoras
+                    COUNT(DISTINCT promotora) as total_promotoras,
+                    COUNT(DISTINCT produto) as total_produtos
                 FROM metricas
                 WHERE data BETWEEN ? AND ?
             """, (data_inicio, data_fim))
@@ -191,7 +224,8 @@ class Database:
                     AVG(valor_liberado) as media_liberado,
                     MIN(valor_liberado) as min_liberado,
                     MAX(valor_liberado) as max_liberado,
-                    COUNT(DISTINCT promotora) as total_promotoras
+                    COUNT(DISTINCT promotora) as total_promotoras,
+                    COUNT(DISTINCT produto) as total_produtos       
                 FROM metricas
             """)
         
@@ -204,7 +238,8 @@ class Database:
             'media_liberado': result[2] or 0,
             'min_liberado': result[3] or 0,
             'max_liberado': result[4] or 0,
-            'total_promotoras': result[5]
+            'total_promotoras': result[5],
+            'total_produtos': result[6]
         }
     
     def get_dados_completos(self, data_inicio: Optional[str] = None,
@@ -214,7 +249,7 @@ class Database:
         
         if data_inicio and data_fim:
             query = """
-                SELECT data, promotora, valor_liberado, id_externo
+                SELECT data, promotora, produto, valor_liberado, id_externo
                 FROM metricas
                 WHERE data BETWEEN ? AND ?
                 ORDER BY data DESC
@@ -222,7 +257,7 @@ class Database:
             df = pd.read_sql_query(query, conn, params=(data_inicio, data_fim))
         else:
             query = """
-                SELECT data, promotora, valor_liberado, id_externo
+                SELECT data, promotora, produto, valor_liberado, id_externo
                 FROM metricas
                 ORDER BY data DESC
             """

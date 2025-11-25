@@ -20,6 +20,7 @@ temp_upload.csv
 *.log
 convert.py
 config.toml
+.streamlit
 
 # IDE
 .vscode/

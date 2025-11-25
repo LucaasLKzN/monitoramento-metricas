@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from database import Database
+from database_factory import get_database, is_using_postgres
+# from database import Database
 from auth import Auth
 
 # Configuração da página
@@ -35,10 +36,10 @@ if not auth.is_authenticated():
 # SE CHEGOU AQUI, ESTÁ AUTENTICADO! Continua o app normal...
 
 # Inicializar banco de dados (sem cache para sempre pegar dados atualizados)
-def init_database():
-    return Database()
+def database_factory():
+    return database_factory()
 
-db = init_database()
+db = get_database()
 
 # Título principal
 st.title("📊 Sistema de Monitoramento")

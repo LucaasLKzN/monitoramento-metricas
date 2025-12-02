@@ -19,10 +19,18 @@ class DatabasePostgres:
     def _get_db_url_from_secrets(self) -> str:
         """Obtém URL do banco dos secrets do Streamlit"""
         try:
-            if hasattr(st, 'secrets') and 'database' in st.secrets:
-                return st.secrets['database']['url']
-        except Exception:
-            pass
+            if hasattr(st, 'secrets'):
+                # Tentar na chave 'database' primeiro
+                if 'database' in st.secrets and 'url' in st.secrets['database']:
+                    print(" URL encontrata em secrets.database.url")
+                    return st.secrets['database']['url']
+                
+                # Tentar na chave 'supabase'
+                if 'supabase' in st.secrets and 'url' in st.secrets['supabase']:
+                    print("URL encontrada em secrets.supabase.url")
+                    return st.secrets['supabase']['url']
+        except Exception as e:
+            print(f" Erro ao ler secrets: {e}")
         return None
     
     def _init_connection_pool(self):

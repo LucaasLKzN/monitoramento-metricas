@@ -11,10 +11,24 @@ class DatabasePostgres:
         Inicializa conexão com PostgreSQL
         db_url formato: postgresql://user:password@host:port/database
         """
-        self.db_url = db_url or self._get_db_url_from_secrets()
+        print("\n Iniciando DatabasePostgres")
+
+        if db_url:
+            print(" URL fornecida diretamente: {db_url[:30]}...")
+            self.db_url = db_url
+        else:
+            print(" Tentando obter URL dos secrets...")
+            self.db_url = self._get_db_url_from_secrets()
+        if not self.db_url:
+            raise Exception("URL do banco não encontrada! Verifique os secrets")
+        
+        print(f" URL configurada: {self.db_url[:30]}...")
+
         self.connection_pool = None
         self._init_connection_pool()
         self.create_tables()
+
+        print(" DatabasePostgres iniciado com sucesso!\n")
     
     def _get_db_url_from_secrets(self) -> str:
         """Obtém URL do banco dos secrets do Streamlit"""

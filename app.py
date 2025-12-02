@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from database_factory import get_database, is_using_postgres
+from database_factory2 import get_database, usando_postgres
 # from database import Database
 from auth import Auth
 

@@ -15,49 +15,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ===============================
-# DEBUG: VERIFICAR SECRETS
-# ===============================
-st.sidebar.markdown("---")
-st.sidebar.subheader("Debug - Ambiente")
-
-# Verificar se o secrets existe
-if hasattr(st, 'secrets'):
-    st.sidebar.success("st.secrets existe")
-
-    # Ver quais chaves existem
-    try:
-        keys = list(st.secrets.keys())
-        st.sidebar.info(f" Chaves disponíveis: {keys}")
-    except Exception as e:
-        st.sidebar.error(f" Erro ao listar chaves: {e}")
-
-    # Verificar a estrutura
-    if 'supabase' in st.secrets:
-        st.sidebar.success(" secrets.supabase encontrado")
-        if 'url' in st.secrets['supabase']:
-            # Mostrar só os primeiros caracteres
-            url_preview = st.secrets['supabase']['url'][:30] + "..."
-            st.sidebar.success(f" URL encontrada: {url_preview}")
-        else:
-            st.sidebar.error(" 'url' não encontrada dentro de supabase")
-    elif 'database' in st.secrets:
-        st.sidebar.success(" secrets.database encontrado")
-        if 'url' in st.secrets['database']:
-            url_preview = st.secrets['database']['url'][:30] + "..."
-            st.sidebar.success(f"URL encontrada: {url_preview}")
-        else:
-            st.sidebar.error(" 'url' nao encontrada dentro de database")
-    else:
-        st.sidebar.error(" Nem 'supabase' nem 'database' encontrados")
-else:
-    st.sidebar.error(" st.secrets não existe")
-
-st.sidebar.markdown("---")
-# ===============================
-
-
-
 # Inicializar session_state se não existir
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False

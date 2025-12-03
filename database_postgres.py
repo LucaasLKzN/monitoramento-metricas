@@ -1,5 +1,6 @@
 import psycopg2
 from psycopg2 import pool
+from psycopg2.extensions import parse_dsn
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional
@@ -11,50 +12,130 @@ class DatabasePostgres:
         Inicializa conexão com PostgreSQL
         db_url formato: postgresql://user:password@host:port/database
         """
+        print("\n🐘 Inicializando DatabasePostgres...")
+        
         self.db_url = db_url or self._get_db_url_from_secrets()
+        
+        if not self.db_url:
+            raise Exception("❌ URL do banco não encontrada! Verifique os secrets.")
+        
+        print(f"✅ URL configurada: {self.db_url[:50]}...")
+        
         self.connection_pool = None
         self._init_connection_pool()
         self.create_tables()
+        
+        print("✅ DatabasePostgres inicializado com sucesso!\n")
     
     def _get_db_url_from_secrets(self) -> str:
         """Obtém URL do banco dos secrets do Streamlit"""
         try:
             if hasattr(st, 'secrets'):
-                # Tentar na chave 'database' primeiro
                 if 'database' in st.secrets and 'url' in st.secrets['database']:
-                    print(" URL encontrata em secrets.database.url")
+                    print("✅ URL encontrada em secrets.database.url")
                     return st.secrets['database']['url']
                 
-                # Tentar na chave 'supabase'
                 if 'supabase' in st.secrets and 'url' in st.secrets['supabase']:
-                    print("URL encontrada em secrets.supabase.url")
+                    print("✅ URL encontrada em secrets.supabase.url")
                     return st.secrets['supabase']['url']
+                
+                # Tentar construir URL a partir de componentes separados
+                if 'supabase' in st.secrets:
+                    s = st.secrets['supabase']
+                    if all(k in s for k in ['host', 'user', 'password', 'database']):
+                        port = s.get('port', '5432')
+                        url = f"postgresql://{s['user']}:{s['password']}@{s['host']}:{port}/{s['database']}"
+                        print("✅ URL construída a partir de componentes separados")
+                        return url
         except Exception as e:
-            print(f" Erro ao ler secrets: {e}")
+            print(f"❌ Erro ao ler secrets: {e}")
+        
         return None
     
     def _init_connection_pool(self):
-        """Inicializa pool de conexões"""
+        """
+        Inicializa pool de conexões com configurações otimizadas para Streamlit Cloud
+        """
         if self.db_url:
             try:
+                print("🔄 Criando pool de conexões...")
+                
+                # Parse da URL para adicionar parâmetros extras
+                conn_params = parse_dsn(self.db_url)
+                
+                # Adicionar parâmetros de conexão otimizados para Streamlit Cloud
+                conn_params.update({
+                    'connect_timeout': 10,  # Timeout de 10 segundos
+                    'keepalives': 1,
+                    'keepalives_idle': 30,
+                    'keepalives_interval': 10,
+                    'keepalives_count': 5,
+                    'options': '-c statement_timeout=30000'  # 30 segundos para queries
+                })
+                
+                # Pool menor para evitar problemas no Streamlit Cloud
                 self.connection_pool = psycopg2.pool.SimpleConnectionPool(
-                    1, 10,  # mínimo e máximo de conexões
-                    self.db_url
+                    minconn=1,  # Reduzido de 1 para 1
+                    maxconn=3,  # Reduzido de 10 para 3
+                    **conn_params
                 )
+                
+                print("✅ Pool de conexões criado com sucesso")
+                
+                # Testar conexão
+                conn = self.connection_pool.getconn()
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.close()
+                self.connection_pool.putconn(conn)
+                print("✅ Teste de conexão bem-sucedido")
+                
             except Exception as e:
-                print(f"Erro ao criar pool de conexões: {e}")
-                raise
+                print(f"❌ Erro ao criar pool de conexões: {e}")
+                print("🔄 Tentando conexão direta sem pool...")
+                
+                # Fallback: usar conexão direta sem pool
+                self.connection_pool = None
+                self.db_url_params = parse_dsn(self.db_url)
+                self.db_url_params.update({
+                    'connect_timeout': 10,
+                    'keepalives': 1,
+                    'keepalives_idle': 30,
+                    'keepalives_interval': 10,
+                    'keepalives_count': 5
+                })
+                print("✅ Configurado para usar conexão direta")
     
     def get_connection(self):
-        """Obtém uma conexão do pool"""
-        if self.connection_pool:
-            return self.connection_pool.getconn()
-        raise Exception("Pool de conexões não inicializado")
+        """Obtém uma conexão do pool ou cria uma nova"""
+        try:
+            if self.connection_pool:
+                return self.connection_pool.getconn()
+            else:
+                # Conexão direta (fallback)
+                return psycopg2.connect(**self.db_url_params)
+        except Exception as e:
+            print(f"❌ Erro ao obter conexão: {e}")
+            # Tentar reconectar
+            if self.connection_pool:
+                self._init_connection_pool()
+                return self.connection_pool.getconn()
+            else:
+                return psycopg2.connect(**self.db_url_params)
     
     def return_connection(self, conn):
-        """Devolve conexão ao pool"""
-        if self.connection_pool:
-            self.connection_pool.putconn(conn)
+        """Devolve conexão ao pool ou fecha se for direta"""
+        try:
+            if self.connection_pool:
+                self.connection_pool.putconn(conn)
+            else:
+                conn.close()
+        except Exception as e:
+            print(f"⚠️ Erro ao retornar conexão: {e}")
+            try:
+                conn.close()
+            except:
+                pass
     
     def create_tables(self):
         """Cria a tabela de métricas se não existir"""
@@ -86,9 +167,10 @@ class DatabasePostgres:
             """)
             
             conn.commit()
+            print("✅ Tabelas e índices criados/verificados")
         except Exception as e:
             conn.rollback()
-            print(f"Erro ao criar tabelas: {e}")
+            print(f"❌ Erro ao criar tabelas: {e}")
             raise
         finally:
             cursor.close()
@@ -145,17 +227,23 @@ class DatabasePostgres:
                 cursor.execute("SELECT COUNT(*) FROM metricas")
                 count_before = cursor.fetchone()[0]
                 
-                # Inserir dados
+                # Inserir dados em lotes (batch) para melhor performance
+                batch_size = 100
                 registros_inseridos = 0
-                for _, row in df[['DATA', 'PROMOTORA', 'PRODUTO_TEMP', 'VALOR LIBERADO', 'ID_EXTERNO']].iterrows():
-                    cursor.execute("""
-                        INSERT INTO metricas (data, promotora, produto, valor_liberado, id_externo)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (row['DATA'], row['PROMOTORA'], row['PRODUTO_TEMP'], 
-                          row['VALOR LIBERADO'], row['ID_EXTERNO']))
-                    registros_inseridos += 1
                 
-                conn.commit()
+                for i in range(0, len(df), batch_size):
+                    batch = df[['DATA', 'PROMOTORA', 'PRODUTO_TEMP', 'VALOR LIBERADO', 'ID_EXTERNO']].iloc[i:i+batch_size]
+                    
+                    for _, row in batch.iterrows():
+                        cursor.execute("""
+                            INSERT INTO metricas (data, promotora, produto, valor_liberado, id_externo)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (row['DATA'], row['PROMOTORA'], row['PRODUTO_TEMP'], 
+                              row['VALOR LIBERADO'], row['ID_EXTERNO']))
+                        registros_inseridos += 1
+                    
+                    # Commit a cada lote
+                    conn.commit()
                 
                 # Contar registros depois
                 cursor.execute("SELECT COUNT(*) FROM metricas")
@@ -343,4 +431,8 @@ class DatabasePostgres:
     def close_all_connections(self):
         """Fecha todas as conexões do pool"""
         if self.connection_pool:
-            self.connection_pool.closeall()
+            try:
+                self.connection_pool.closeall()
+                print("✅ Pool de conexões fechado")
+            except Exception as e:
+                print(f"⚠️ Erro ao fechar pool: {e}")

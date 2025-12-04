@@ -1,33 +1,102 @@
-# Arquivos de usuários (NUNCA commitar!)
+# ============================================
+# ARQUIVOS SENSÍVEIS - NÃO COMMITAR
+# ============================================
 
+# Secrets do Streamlit
+.streamlit/secrets.toml
+.streamlit/config.toml
 
-# Banco de dados
-dados.db
+# Credenciais e dados sensíveis
+users.json
 *.db
+*.sqlite
+*.sqlite3
 
-# Python
+# Arquivos temporários
+temp_upload.csv
+*.tmp
+*.temp
+
+# ============================================
+# PYTHON
+# ============================================
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Distribution / packaging
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
 venv/
-env/
 ENV/
+env/
+.venv
 
-# Arquivos temporários
-temp_upload.csv
-*.log
-convert.py
-config.toml
-.streamlit
-
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# pytest
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# ============================================
+# PROJETO ESPECÍFICO
+# ============================================
+
+# Backups
+backup/
+*.bak
+
+# Dados de teste
+test_data/
+sample_data/
+
+# Relatórios gerados
+relatorios/
+exports/

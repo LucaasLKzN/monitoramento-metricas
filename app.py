@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from database_factory2 import get_database, usando_postgres
+from database_factory import get_database, usando_postgres
 # from database import Database
 from auth_supabase import AuthSupabase as Auth
 
@@ -322,7 +322,7 @@ elif menu == "📥 Importar Dados":
     1. Abra seu Google Sheets
     2. Clique em **Arquivo > Fazer download > Valores separados por vírgula (.csv)**
     3. Faça upload do arquivo abaixo
-    4. Certifique-se que o CSV contém as colunas: **DATA, PROMOTORA, VALOR LIBERADO, ID**
+    4. Certifique-se que o CSV contém as colunas: **DATA, PROMOTORA, PRODUTO, VALOR LIBERADO, ID**
     """)
     
     uploaded_file = st.file_uploader(
@@ -532,6 +532,6 @@ elif menu == "🔑 Alterar Senha":
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: gray;'>
-    <small>Sistema de Monitoramento de Métricas 2025 | Desenvolvido por AzDev</small>
+    <small>Sistema de Monitoramento de Métricas 2026 | Desenvolvido por AzDev</small>
 </div>
 """, unsafe_allow_html=True)

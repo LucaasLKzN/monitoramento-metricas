@@ -532,6 +532,6 @@ elif menu == "🔑 Alterar Senha":
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: gray;'>
-    <small>Sistema de Monitoramento de Métricas 2026 | Desenvolvido por AzDev</small>
+    <small>Sistema de Monitoramento de Métricas 2026 | Desenvolvido por Credliber</small>
 </div>
 """, unsafe_allow_html=True)
